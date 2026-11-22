@@ -2,7 +2,40 @@
 """Draw the 22 Nov 2026 world-news front page, 1024x1024 PNG.
 One image, 17 stories, each with a small hand-drawn pictogram.
 All stories first reported on Sunday 22 November 2026, except the
-Florida floods (first reported 21 November, still rising on the 22nd)."""
+Florida floods (first reported 21 November, still rising on the 22nd).
+Page layout, top to bottom:
+- Masthead: "THE WORLD IN ONE DAY" over a big serif "WORLD NEWS"
+  title, the date in red, and thick black rules above and below.
+- Lead story: a navy-framed panel on a pale blue ground, with the
+  COP31 collapse in Antalya as the day's biggest story, plus a
+  globe-and-torn-pact pictogram drawn in place.
+- Grid: twelve numbered cards in two columns and six rows, each with
+  a kicker line, a serif headline, a two-line summary and a small
+  36x36 pictogram on the left.
+- Also-today strip: a navy band listing four shorter items, with a
+  footer line noting the reporting dates of every story.
+The seventeen stories cover the COP31 collapse, the Iran strikes on
+Bahrain, the Kyiv drone hit, the NATO emergency talks, the Danish
+expulsion, the killer-robot talks, the measles death, the AI-centre
+tax threat, the Florida floods, the England rugby win, the Gaza aid
+strike, the failed Trump-Kim bid, the cost-of-living protests, and
+the four also-today items from Mexico, the EU-Indonesia deal, the
+ATP Finals and the NWSL Championship.
+Story nine was swapped late in the day: a factory fire in Cikande
+was replaced by the Florida record floods, because the reader asked
+for a natural-disaster story; the footer and the sources note that
+the floods were first reported on 21 November, a day earlier than
+the rest.
+Every pictogram is drawn by hand with PIL primitives (polygons,
+rectangles, ellipses, lines and arcs) inside a 36x36 box on a warm
+grey tile; there are no image files, no downloaded assets, and no
+network calls anywhere in the script.
+Type comes from the Liberation family already on the system: bold
+serif for headlines, regular serif for the footer, and sans for
+kickers, summaries and labels.
+The script is fully deterministic: fixed story text, fixed layout
+numbers and no randomness, so two runs write identical bytes.
+"""
 import math
 from PIL import Image, ImageDraw, ImageFont
 
@@ -22,6 +55,9 @@ SERIF_R = "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"
 SANS = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
 SANS_B = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 
+# Fonts: one tiny helper wraps truetype loading, so every call site
+# just names a face and a size. The four faces are the Liberation
+# files already on the system; nothing is downloaded.
 def F(path, size):
     return ImageFont.truetype(path, size)
 
@@ -29,6 +65,9 @@ img = Image.new("RGB", (W, H), PAPER)
 d = ImageDraw.Draw(img)
 M = 36
 
+# Text helpers: wrap() breaks a string into lines that fit a width,
+# para() draws those lines one under another and reports how far down
+# the cursor moved, so callers can stack headline and summary.
 def wrap(text, font, max_w):
     words = text.split()
     lines, cur = [], ""
@@ -54,6 +93,9 @@ def para(text, font, x, y, max_w, leading, color=INK):
 def hline(y, color=RULE, width=2):
     d.line([(M, y), (W - M, y)], fill=color, width=width)
 
+# Pictograms: one small function per story icon. Each opens with
+# icon_bg() for the warm tile, then draws its subject with plain
+# PIL shapes; the caller passes the top-left corner (ox, oy).
 # ---------- pictograms (each drawn in a 36x36 box at ox, oy) ----------
 def icon_bg(ox, oy):
     d.rounded_rectangle([ox, oy, ox + 36, oy + 36], radius=6,
@@ -221,6 +263,8 @@ def ico_globe(ox, oy):
     d.line([(ox + 18, oy + 8), (ox + 18, oy + 32)], fill=(40, 90, 160),
            width=1)
 
+# Masthead: the paper name, the date line and the rules. The title
+# is set in 76-point bold serif and centred; the date is red sans.
 # ---------- Masthead ----------
 y = 14
 d.text((W // 2, y), "THE WORLD IN ONE DAY", font=F(SANS_B, 16),
@@ -235,6 +279,9 @@ d.text((W // 2, y), "SUNDAY  22  NOVEMBER  2026", font=F(SANS_B, 24),
 y += 34
 d.line([(M, y), (W - M, y)], fill=INK, width=4)
 
+# Lead story: the biggest story gets a framed panel and a larger
+# pictogram drawn in place (globe, torn pact, red slash). The panel
+# is 134 points tall; the text column is 700 points wide.
 # ---------- Lead story ----------
 lead_y = y + 12
 d.rectangle([M, lead_y, W - M, lead_y + 134], fill=LEAD_BG, outline=NAVY,
@@ -277,6 +324,11 @@ y = lead_y + 134 + 10
 hline(y, color=INK, width=2)
 y += 12
 
+# Grid: the twelve numbered cards are data, not twelve copies of
+# drawing code. Each tuple holds number, kicker, colour, icon
+# function, headline and summary; the loop places them two across.
+# A headline or summary that wraps past its budget is recorded in
+# warn[] and printed at the end, so a bad fit is never silent.
 # ---------- Grid: 2 columns x 6 rows ----------
 cards = [
     ("2", "BAHRAIN — CONFLICT", RED, ico_missile,
@@ -350,6 +402,9 @@ for i, (num, kick, kc, ico, head, summ) in enumerate(cards):
 
 y = y + 6 * row_h + 5 * gap + 8
 
+# Also-today strip: a navy band for the four shorter items, joined
+# with bullets, plus the footer line that dates every story. The
+# Florida exception is stated here, matching the README.
 # ---------- Also-today strip ----------
 d.rectangle([M, y, W - M, y + 84], fill=NAVY)
 fy = y + 9
@@ -366,6 +421,10 @@ d.text((M + 16, fy),
        "Every story above was first reported on Sunday 22 November 2026, except the Florida floods (21 November).",
        font=F(SERIF_R, 13), fill=(200, 210, 225))
 
+# Main entry point: save the finished page as an optimised PNG and
+# report its size. The path is fixed so main.ts can copy it on.
+# Any wrap warning collected while laying out the grid is printed
+# here, after the save, so the run log shows it.
 out = "/home/hatch/workspace/makefun/news-image-20261122/entry.png"
 img.save(out, optimize=True)
 import os
